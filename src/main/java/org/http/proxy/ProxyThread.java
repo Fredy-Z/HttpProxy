@@ -2,6 +2,8 @@ package org.http.proxy;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.http.proxy.models.HttpResponse;
+import org.http.proxy.models.KeyValuePair;
 import org.http.proxy.utils.GarUtils;
 import org.http.proxy.utils.HttpHeaderUtil;
 import org.http.proxy.utils.MyByteArrayOutputStream;
@@ -17,7 +19,7 @@ import java.util.concurrent.Callable;
 public class ProxyThread implements Callable, ConstantsAware {
     private static final Logger logger = Logger.getLogger(ProxyThread.class);
 
-    private JavaHttpProxy httpProxy;
+    private HttpProxy httpProxy;
     private Socket clientSocket;
     private Socket proxyClientSocket;
 
@@ -48,7 +50,7 @@ public class ProxyThread implements Callable, ConstantsAware {
         return responseBody;
     }
 
-    public ProxyThread(JavaHttpProxy proxy, Socket clientSocket) throws IOException {
+    public ProxyThread(HttpProxy proxy, Socket clientSocket) throws IOException {
         outputBuf = new MyByteArrayOutputStream(1024 * 10);
 
         this.httpProxy = proxy;

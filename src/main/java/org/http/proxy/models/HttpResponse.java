@@ -1,5 +1,7 @@
-package org.http.proxy;
+package org.http.proxy.models;
 
+import org.http.proxy.ConstantsAware;
+import org.http.proxy.StatusCode;
 import org.http.proxy.utils.HttpHeaderUtil;
 import org.http.proxy.utils.MyByteArrayOutputStream;
 
@@ -8,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 
-class HttpResponse implements ConstantsAware {
+public class HttpResponse implements ConstantsAware {
 
     MyByteArrayOutputStream baos;
     private String versionTok = "HTTP/1.1";

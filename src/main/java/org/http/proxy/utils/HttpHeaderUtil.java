@@ -7,7 +7,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.http.proxy.ConstantsAware;
-import org.http.proxy.KeyValuePair;
+import org.http.proxy.models.KeyValuePair;
 
 public class HttpHeaderUtil implements ConstantsAware {
 

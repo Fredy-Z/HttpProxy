@@ -2,7 +2,7 @@ package org.http.proxy.tasks;
 
 import java.util.concurrent.*;
 
-public class TaskExecutorService {
+public class TaskExecutor {
 
     private static ExecutorService executorService;
 
@@ -25,14 +25,12 @@ public class TaskExecutorService {
     }
 
     public static void shutdown() {
-        synchronized (executorService) {
-            if (executorService != null && !executorService.isShutdown()) {
-                executorService.shutdown();
-            }
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdown();
         }
     }
 
-    public static void submitCommon(Callable callable) {
+    public static void submitTask(Callable callable) {
         executorService.submit(callable);
     }
 }

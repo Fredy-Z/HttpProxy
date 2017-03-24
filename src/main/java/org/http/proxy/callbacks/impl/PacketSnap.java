@@ -2,7 +2,7 @@ package org.http.proxy.callbacks.impl;
 
 import org.apache.log4j.Logger;
 import org.http.proxy.ConstantsAware;
-import org.http.proxy.KeyValuePair;
+import org.http.proxy.models.KeyValuePair;
 import org.http.proxy.ProxyThread;
 import org.http.proxy.callbacks.IProxyCallback;
 
