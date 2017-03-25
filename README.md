@@ -2,7 +2,7 @@ A http proxy written with socket.
 
 Default usage:
 ```
-HttpProxy proxy = new HttpProxy(host, port, null, null, new PacketSnap());
+HttpProxy proxy = new HttpProxy(host, port, null, null, null);
 proxy.start();
 ```
 
