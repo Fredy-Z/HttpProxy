@@ -2,34 +2,24 @@ package org.http.proxy;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.http.proxy.aspects.IProxyPreprocessor;
+import org.http.proxy.aspects.IProxyInterceptor;
+import org.http.proxy.aspects.IProxyPostprocessor;
 import org.http.proxy.models.HttpResponse;
 import org.http.proxy.models.KeyValuePair;
 import org.http.proxy.utils.GarUtils;
 import org.http.proxy.utils.HttpHeaderUtil;
-import org.http.proxy.utils.MyByteArrayOutputStream;
 
 import java.io.*;
 import java.net.Socket;
 import java.sql.Timestamp;
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Callable;
 
 public class ProxyThread implements Callable, ConstantsAware {
     private static final Logger logger = Logger.getLogger(ProxyThread.class);
-
-    private HttpProxy httpProxy;
-    private Socket clientSocket;
-    private Socket proxyClientSocket;
-
-    private List<String> headerLineList = new ArrayList<String>();
-
-    public InputStream requestInput;
-    public InputStream responseInput;
-
     public String requestTime;
-    public MyByteArrayOutputStream outputBuf;
     // method whole_path version
     public String[] requestFirstLine;
     // version status_code status_message
@@ -38,9 +28,27 @@ public class ProxyThread implements Callable, ConstantsAware {
     public Object[] uriToks;
     public List<KeyValuePair<String, String>> requestHeaders;
     public List<KeyValuePair<String, String>> responseHeaders;
-
+    public Socket clientSocket;
+    private IProxyPreprocessor preprocessor;
+    private IProxyInterceptor interceptor;
+    private IProxyPostprocessor postprocessor;
     private String requestBody;
     private String responseBody;
+
+    public ProxyThread(HttpProxy proxy, Socket clientSocket) throws IOException {
+        this.clientSocket = clientSocket;
+        this.preprocessor = proxy.getPreprocessor();
+        this.interceptor = proxy.getInterceptor();
+        this.postprocessor = proxy.getPostprocessor();
+
+        uriToks = new Object[4];
+        requestFirstLine = new String[3];
+        responseFirstLine = new String[3];
+        requestHeaders = new LinkedList<>();
+        responseHeaders = new LinkedList<>();
+        requestBody = "";
+        responseBody = "";
+    }
 
     public String getRequestBody() {
         return requestBody;
@@ -50,87 +58,76 @@ public class ProxyThread implements Callable, ConstantsAware {
         return responseBody;
     }
 
-    public ProxyThread(HttpProxy proxy, Socket clientSocket) throws IOException {
-        outputBuf = new MyByteArrayOutputStream(1024 * 10);
-
-        this.httpProxy = proxy;
-        this.clientSocket = clientSocket;
-
-        uriToks = new Object[4];
-        requestFirstLine = new String[3];
-        responseFirstLine = new String[3];
-        requestHeaders = new LinkedList<KeyValuePair<String, String>>();
-        responseHeaders = new LinkedList<KeyValuePair<String, String>>();
-        requestBody = "";
-        responseBody = "";
-    }
-
     @Override
     public Object call() throws Exception {
-        // int i = 0;
         while (clientSocket.isConnected()) {
-            // System.out.println("read content from this socket for " + i++ +
-            // " times");
-
-            requestInput = clientSocket.getInputStream();
-            HttpHeaderUtil.readHeadersIntoList(requestInput, DefaultEncoding, outputBuf, headerLineList);
-            parseRequestHeaders(headerLineList);
-            // ###################request log#############
-            if ("https://".equalsIgnoreCase(uriToks[0].toString())) {
-                doResponse(new HttpResponse(StatusCode.MethodNotAllowed, "https not supported".getBytes(DefaultEncoding), TextHtml));
-                skipUnusedBody(requestHeaders, requestInput);
+            parseRequestHeaders(clientSocket.getInputStream());
+            if (uriToks[0].toString().equalsIgnoreCase(SECURE_SCHEMA)) {
+                doResponse(new HttpResponse(StatusCode.MethodNotAllowed, "https not supported".getBytes(DEFAULT_ENCODING), TextHtml));
+                skipUnusedBody(requestHeaders, clientSocket.getInputStream());
                 continue;
             }
-            httpProxy.preprocessOnProxyThread(this);
+
+            if (preprocessor != null) {
+                preprocessor.on(this);
+            }
+            Socket proxyClientSocket = null;
             try {
                 requestTime = new Timestamp(System.currentTimeMillis()).toString();
-                sendRequest();
-                getResponse();
+                proxyClientSocket = new Socket(uriToks[1].toString(), ((Number) uriToks[2]).intValue());
+                sendRequest(proxyClientSocket);
+                parseResponseHeaders(proxyClientSocket.getInputStream());
+                HttpResponse tempResponse = buildTempResponse(proxyClientSocket);
+                if (interceptor != null) {
+                    interceptor.on(this, tempResponse);
+                }
+                doResponse(tempResponse);
+                if (postprocessor != null) {
+                    postprocessor.on(this);
+                }
             } catch (Throwable throwable) {
-                closeProxyClientSocket();
-                StringBuilder buffer = new StringBuilder();
-                String errorResponse = "<html><head><title>Proxy Error</title><style type=\"text/css\">body{font-family: Arial,Helvetica,Sans-serif;font-size: 12px;color: #333333;background-color: #ffffff;}h1 {font-size: 24px;font-weight: bold;}h2 {font-size: 18px;font-weight: bold;}</style></head><body><h1>Proxy Error</h1><h2>Failed to connect to remote host</h2><pre>%s</pre></body></html>";
-                buffer.append(String.format(errorResponse, throwable.getMessage()));
-                doResponse(new HttpResponse(StatusCode.ServiceUnavailable, buffer.toString().getBytes(DefaultEncoding), TextHtml));
+                String response = String.format(ERROR_RESPONSE, throwable.getMessage());
+                doResponse(new HttpResponse(StatusCode.ServiceUnavailable, response.getBytes(DEFAULT_ENCODING)));
+            } finally {
+                if (proxyClientSocket != null) {
+                    proxyClientSocket.close();
+                }
             }
-            httpProxy.interceptOnProxyThread(this);
-            sendResponse();
-            httpProxy.callbackOnProxyThread(this);
-            closeProxyClientSocket();
         }
         return this;
     }
 
-    private void parseRequestHeaders(List<String> requestHeaderLineList) throws IOException {
-        if (requestHeaderLineList.size() == 0)
+    private void parseRequestHeaders(InputStream requestInput) throws IOException {
+        List<String> requestHeaderLines = HttpHeaderUtil.readHeaders(requestInput);
+        if (requestHeaderLines.size() == 0)
             return;
-        String first = requestHeaderLineList.get(0);
-        int index1 = first.indexOf(' ');
-        int index2 = first.lastIndexOf(' ');
+        String firstLine = requestHeaderLines.get(0);
+        int index1 = firstLine.indexOf(' ');
+        int index2 = firstLine.lastIndexOf(' ');
         if (index1 > 0 && index2 > index1) {
-            String method = first.substring(0, index1).toUpperCase();
-            String requestURL = first.substring(index1 + 1, index2).trim();
-            String version = first.substring(index2 + 1).toUpperCase();
+            String method = firstLine.substring(0, index1).toUpperCase();
+            String requestURL = firstLine.substring(index1 + 1, index2).trim();
+            String version = firstLine.substring(index2 + 1).toUpperCase();
             requestFirstLine[0] = method;
             requestFirstLine[1] = requestURL;
             requestFirstLine[2] = version;
             if (!method.matches("^[A-Z]+$")) {
-                throw new ParseException("bad request verb");
+                throw new ParseException("bad request method");
             }
             if (!version.matches("^HTTP.+$")) {
                 throw new ParseException("bad request version");
             }
-            HttpHeaderUtil.parseHeaders(requestHeaders, requestHeaderLineList);
+            HttpHeaderUtil.parseHeaders(requestHeaders, requestHeaderLines);
             if (requestURL.startsWith("/")) {
                 logger.info("request URL starts with / : " + requestURL);
-                String host = HttpHeaderUtil.getHeaderValue(this.requestHeaders, Host);
+                String host = HttpHeaderUtil.getHeaderValue(this.requestHeaders, HOST);
                 if (host == null || host.length() < 1) {
                     throw new ParseException("Parse request headers error: no host");
                 }
-                uriToks[0] = DefaultSchema;
+                uriToks[0] = DEFAULT_SCHEMA;
                 uriToks[1] = host;
                 uriToks[3] = requestURL;
-                requestFirstLine[1] = DefaultSchema + host + requestURL;
+                requestFirstLine[1] = DEFAULT_SCHEMA + host + requestURL;
             } else {
                 logger.info("request URL does not starts with / : " + requestURL);
                 String s;
@@ -139,10 +136,10 @@ public class ProxyThread implements Callable, ConstantsAware {
                 } else {
                     s = requestURL.toLowerCase();
                 }
-                if (s.startsWith(DefaultSchema)) {
-                    uriToks[0] = DefaultSchema;
-                } else if (s.startsWith(SecureSchema)) {
-                    uriToks[0] = SecureSchema;
+                if (s.startsWith(DEFAULT_SCHEMA)) {
+                    uriToks[0] = DEFAULT_SCHEMA;
+                } else if (s.startsWith(SECURE_SCHEMA)) {
+                    uriToks[0] = SECURE_SCHEMA;
                 } else {
                     throw new ParseException("bad request path,bad schema");
                 }
@@ -153,7 +150,7 @@ public class ProxyThread implements Callable, ConstantsAware {
                 }
                 uriToks[1] = requestURL.substring(0, index);
                 uriToks[3] = requestURL.substring(index);
-                HttpHeaderUtil.setHeader(requestHeaders, Host, uriToks[1]);
+                HttpHeaderUtil.setHeader(requestHeaders, HOST, uriToks[1]);
             }
             int port;
             String host = uriToks[1].toString();
@@ -162,7 +159,7 @@ public class ProxyThread implements Callable, ConstantsAware {
                 port = Integer.parseInt(host.substring(index + 1).trim());
                 host = host.substring(0, index);
             } else {
-                port = DefaultPort;
+                port = DEFAULT_PORT;
             }
             uriToks[1] = host;
             uriToks[2] = port;
@@ -172,174 +169,116 @@ public class ProxyThread implements Callable, ConstantsAware {
     }
 
     private void skipUnusedBody(List<KeyValuePair<String, String>> requestHeaders, InputStream input) throws IOException {
-        String _length = HttpHeaderUtil.getHeaderValue(requestHeaders, ContentLength);
+        String _length = HttpHeaderUtil.getHeaderValue(requestHeaders, CONTENT_LENGTH);
         if (_length != null && _length.length() > 0) {
             long length = Long.parseLong(_length);
             input.skip(length);
         }
     }
 
-    public synchronized void closeProxyClientSocket() {
-        try {
-            if (proxyClientSocket != null) {
-                proxyClientSocket.close();
-                proxyClientSocket = null;
-            }
-        } catch (Throwable t) {
-            logger.error("close proxy client socket error");
-        }
-        this.responseInput = null;
-    }
-
-    private void sendRequest() throws IOException {
-        proxyClientSocket = new Socket(uriToks[1].toString(), ((Number) uriToks[2]).intValue());
-        DataOutputStream requestOutput = new DataOutputStream(new BufferedOutputStream(proxyClientSocket.getOutputStream()));
-        transferRequestHeaders(requestOutput, DefaultEncoding);
+    private void sendRequest(Socket proxyClientSocket) throws IOException {
+        OutputStream output = proxyClientSocket.getOutputStream();
+        DataOutputStream requestOutput = new DataOutputStream(new BufferedOutputStream(output));
+        transferRequestHeaders(requestOutput);
         transferRequestBody(requestOutput);
         requestOutput.flush();
     }
 
-    private void transferRequestHeaders(OutputStream output, String encoding) throws IOException {
-        output.write(requestFirstLine[0].getBytes(encoding));
+    private void transferRequestHeaders(OutputStream output) throws IOException {
+        output.write(requestFirstLine[0].getBytes());
         output.write(' ');
-        output.write(uriToks[3].toString().getBytes(encoding));
+        output.write(requestFirstLine[1].getBytes());
         output.write(' ');
-        output.write(requestFirstLine[2].getBytes(encoding));
-        output.write(CRLF.getBytes(encoding));
-        HttpHeaderUtil.sendHeaders(output, requestHeaders, encoding);
-        output.write(CRLF.getBytes(encoding));
+        output.write(requestFirstLine[2].getBytes());
+        output.write(CRLF.getBytes());
+        HttpHeaderUtil.sendHeaders(output, requestHeaders);
+        output.write(CRLF.getBytes());
     }
 
     private void transferRequestBody(OutputStream output) throws IOException {
-        String _length = HttpHeaderUtil.getHeaderValue(this.requestHeaders, ContentLength);
-        if (_length != null && _length.length() > 0) {
-            long length = Long.parseLong(_length);
-            byte[] requestBodyBytes = GarUtils.transfer(requestInput, output, length);
+        String contentLength = HttpHeaderUtil.getHeaderValue(this.requestHeaders, CONTENT_LENGTH);
+        if ((contentLength != null && contentLength.length() > 0)) {
+            InputStream requestInput = clientSocket.getInputStream();
+            byte[] requestBodyBytes = GarUtils.transfer(requestInput, output, Long.parseLong(contentLength));
             if (requestBodyBytes != null && requestBodyBytes.length > 0) {
-                requestBody = new String(requestBodyBytes, DefaultEncoding).trim();
+                requestBody = new String(requestBodyBytes, DEFAULT_ENCODING).trim();
             }
         }
     }
 
-    private void getResponse() throws IOException {
-        responseInput = proxyClientSocket.getInputStream();
-        HttpHeaderUtil.readHeadersIntoList(responseInput, DefaultEncoding, outputBuf, headerLineList);
-        parseResponseHeaders(headerLineList);
-    }
-
-    private void parseResponseHeaders(List<String> responseHeaderLineList) throws IOException {
-        int size = responseHeaderLineList.size();
-        assert (size > 0);
-        String first = responseHeaderLineList.get(0);
-        int index1 = first.indexOf(' ');
-        int index2 = first.indexOf(' ', index1 + 1);
-        if (index1 > 0 && index2 > index1) {
-            String version = first.substring(0, index1).toUpperCase();
-            String statusCode = first.substring(index1 + 1, index2).trim();
-            String reasonPhrase = first.substring(index2 + 1).trim();
-            responseFirstLine[0] = version;
-            responseFirstLine[1] = statusCode;
-            responseFirstLine[2] = reasonPhrase;
-            if (!version.matches("^HTTP.+$")) {
-                throw new ParseException("bad response version");
+    private void parseResponseHeaders(InputStream responseInput) throws IOException {
+        List<String> responseHeaderLines = HttpHeaderUtil.readHeaders(responseInput);
+        if (responseHeaderLines != null && responseHeaderLines.size() != 0) {
+            String firstLine = responseHeaderLines.get(0);
+            int index1 = firstLine.indexOf(' ');
+            int index2 = firstLine.indexOf(' ', index1 + 1);
+            if (index1 > 0 && index2 > index1) {
+                String version = firstLine.substring(0, index1).toUpperCase();
+                String statusCode = firstLine.substring(index1 + 1, index2).trim();
+                String reasonPhrase = firstLine.substring(index2 + 1).trim();
+                responseFirstLine[0] = version;
+                responseFirstLine[1] = statusCode;
+                responseFirstLine[2] = reasonPhrase;
+                if (!version.matches("^HTTP.+$")) {
+                    throw new ParseException("bad response version");
+                }
+                if (!statusCode.matches("^\\d+$")) {
+                    throw new ParseException("bad response status code");
+                }
+                if (reasonPhrase.length() < 1) {
+                    throw new ParseException("no response status message");
+                }
+                HttpHeaderUtil.parseHeaders(responseHeaders, responseHeaderLines);
+            } else {
+                throw new ParseException("bad request first line");
             }
-            if (!statusCode.matches("^\\d+$")) {
-                throw new ParseException("bad response status code");
-            }
-            if (reasonPhrase.length() < 1) {
-                throw new ParseException("no response status message");
-            }
-            HttpHeaderUtil.parseHeaders(responseHeaders, responseHeaderLineList);
-        } else {
-            throw new ParseException("bad request first line");
         }
     }
 
-    private void sendResponse() throws IOException {
+    private HttpResponse buildTempResponse(Socket proxyClientSocket) throws IOException {
         String statusCodeStr = responseFirstLine[1];
         String message = responseFirstLine[2];
 
         HttpResponse response = new HttpResponse(Integer.parseInt(statusCodeStr), message);
-        response.setVersionTok(responseFirstLine[0]);
+        response.setVersion(responseFirstLine[0]);
         response.setHeaders(responseHeaders);
-        response.setSendEncoding(DefaultEncoding);
-        response.setInput(responseInput);
-        response.setBody(MockBody);
+        response.setInput(proxyClientSocket.getInputStream());
 
-        doResponse(response);
+        return response;
     }
 
     private void doResponse(HttpResponse response) throws IOException {
-        String encoding = response.getSendEncoding();
-        DataOutputStream responseOutputStream = new DataOutputStream(clientSocket.getOutputStream());
-        responseOutputStream.write(response.getVersionTok().getBytes(encoding));
-        responseOutputStream.write(' ');
-        responseOutputStream.write(String.valueOf(response.getStatucCode()).getBytes(encoding));
-        responseOutputStream.write(' ');
-        responseOutputStream.write(response.getStatusMessage().getBytes(encoding));
-        responseOutputStream.write(CRLF.getBytes(encoding));
+        DataOutputStream responseOutput = new DataOutputStream(clientSocket.getOutputStream());
+        responseOutput.write(response.getVersion().getBytes());
+        responseOutput.write(' ');
+        responseOutput.write(String.valueOf(response.getStatusCode()).getBytes());
+        responseOutput.write(' ');
+        responseOutput.write(response.getStatusMessage().getBytes());
+        responseOutput.write(CRLF.getBytes());
+
         List<KeyValuePair<String, String>> headers = response.getHeaders();
+        HttpHeaderUtil.sendHeaders(responseOutput, headers);
+        responseOutput.write(CRLF.getBytes());
+
         byte[] body = response.getBody();
-
-        byte[] bodyBuf;
-        InputStream responseInput = null;
-        MyByteArrayOutputStream outputStreamBuffer = null;
-        String _length = null;
-        int size = 0;
-
         // is null when sending the real response with mock body
-        if (body == null || body.length < 1) {
-            if ((responseInput = response.getInput()) == null) {
-                HttpHeaderUtil.setHeader(headers, ContentLength, 0);
-            } else {
-                _length = HttpHeaderUtil.getHeaderValue(headers, ContentLength);
-                // sometimes the response doesn't contain the content-length
-                // header
-                if (_length == null || _length.length() < 1) {
-                    outputStreamBuffer = outputBuf;
-                    outputStreamBuffer.reset();
-                    bodyBuf = GarUtils.transfer(responseInput, outputStreamBuffer, MaxCaptureBodyLength);
-                    setResponseBody(bodyBuf, HttpHeaderUtil.getHeaderValue(headers, ContentType), _length);
-                    // size = bodyBuf.length;
-                    // if (size < MaxCaptureBodyLength) {
-                    HttpHeaderUtil.setHeader(headers, ContentLength, bodyBuf.length);
-                    // }
-                }
+        if (body == null || body.length == 0) {
+            InputStream responseInput = response.getInput();
+            if (responseInput != null) {
+                GarUtils.transfer(responseInput, responseOutput);
             }
         } else {
-            HttpHeaderUtil.setHeader(headers, ContentLength, body.length);
+            responseOutput.write(body);
         }
+        setResponseBody(body, HttpHeaderUtil.getHeaderValue(responseHeaders, CONTENT_TYPE));
 
-        HttpHeaderUtil.sendHeaders(responseOutputStream, headers, encoding);
-        responseOutputStream.write(CRLF.getBytes(encoding));
-
-        try {
-            if ((body == null || body.length < 1) && responseInput != null) {
-                if (_length == null || _length.length() < 1) {
-                    if (outputStreamBuffer != null) {
-                        responseOutputStream.write(outputStreamBuffer.getBuffer(), 0, outputStreamBuffer.size());
-                        if (size < MaxCaptureBodyLength) {
-                            // return false;
-                        }
-                    }
-                    // return false;
-                } else {
-                    bodyBuf = GarUtils.transfer(responseInput, responseOutputStream, Integer.parseInt(_length));
-                    setResponseBody(bodyBuf, HttpHeaderUtil.getHeaderValue(headers, ContentType), _length);
-                }
-            } else {
-                responseOutputStream.write(body);
-            }
-            // return false;
-        } finally {
-            responseOutputStream.flush();
-        }
+        responseOutput.flush();
     }
 
-    private void setResponseBody(byte[] responseBodyBytes, String contentType, String contentLength) throws UnsupportedEncodingException {
+    private void setResponseBody(byte[] responseBodyBytes, String contentType) throws UnsupportedEncodingException {
         if (responseBodyBytes != null && responseBodyBytes.length > 0) {
             if (contentType == null || StringUtils.indexOfAny(contentType, SupportedContentTypes) != -1) {
-                responseBody = new String(responseBodyBytes, DefaultEncoding).trim();
+                responseBody = new String(responseBodyBytes, DEFAULT_ENCODING).trim();
             } else {
                 responseBody = "XXXXXX  Support of this kind of content type has not been implemented.";
             }

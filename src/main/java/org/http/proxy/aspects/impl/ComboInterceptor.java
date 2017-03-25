@@ -1,8 +1,9 @@
-package org.http.proxy.interceptors.impl;
+package org.http.proxy.aspects.impl;
 
 
 import org.http.proxy.ProxyThread;
-import org.http.proxy.interceptors.IProxyInterceptor;
+import org.http.proxy.aspects.IProxyInterceptor;
+import org.http.proxy.models.HttpResponse;
 
 public class ComboInterceptor implements IProxyInterceptor {
     
@@ -13,9 +14,9 @@ public class ComboInterceptor implements IProxyInterceptor {
     }
 
     @Override
-    public void on(ProxyThread thread) throws Exception {
+    public void on(ProxyThread thread, HttpResponse tempResponse) throws Exception {
         for (IProxyInterceptor interceptor : interceptors) {
-            interceptor.on(thread);
+            interceptor.on(thread, tempResponse);
         }
     }
 }

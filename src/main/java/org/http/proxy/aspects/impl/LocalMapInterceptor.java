@@ -1,18 +1,15 @@
-package org.http.proxy.interceptors.impl;
+package org.http.proxy.aspects.impl;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
+import java.io.*;
 import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
 import org.http.proxy.ConstantsAware;
 import org.http.proxy.ProxyThread;
-import org.http.proxy.interceptors.IProxyInterceptor;
+import org.http.proxy.aspects.IProxyInterceptor;
+import org.http.proxy.models.HttpResponse;
 import org.http.proxy.utils.GarUtils;
 import org.http.proxy.utils.HttpHeaderUtil;
-import org.http.proxy.utils.MyByteArrayOutputStream;
 
 public class LocalMapInterceptor implements IProxyInterceptor, ConstantsAware {
 
@@ -23,7 +20,7 @@ public class LocalMapInterceptor implements IProxyInterceptor, ConstantsAware {
     }
 
     @Override
-    public void on(ProxyThread thread) throws Exception {
+    public void on(ProxyThread thread, HttpResponse tempResponse) throws Exception {
         String currentUri = thread.requestFirstLine[1];
 
         for (String uri : mapLocalMap.keySet()) {
@@ -39,10 +36,10 @@ public class LocalMapInterceptor implements IProxyInterceptor, ConstantsAware {
                     break;
                 }
 
-                MyByteArrayOutputStream buffer = thread.outputBuf;
-                buffer.reset();
+
                 int size;
                 InputStream input = null;
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                 try {
                     input = new FileInputStream(localFile);
                     size = GarUtils.transfer(input, buffer).length;
@@ -50,9 +47,9 @@ public class LocalMapInterceptor implements IProxyInterceptor, ConstantsAware {
                     if (input != null)
                         input.close();
                 }
-                thread.responseInput = new ByteArrayInputStream(buffer.getBuffer(), 0, size);
-                HttpHeaderUtil.removeHeader(thread.responseHeaders, ContentEncoding);
-                HttpHeaderUtil.setHeader(thread.responseHeaders, ContentLength, size);
+                tempResponse.setBody(buffer.toByteArray());
+                HttpHeaderUtil.removeHeader(thread.responseHeaders, CONTENT_ENCODING);
+                HttpHeaderUtil.setHeader(thread.responseHeaders, CONTENT_LENGTH, size);
                 thread.responseFirstLine[1] = "200";
                 thread.responseFirstLine[2] = "OK";
 

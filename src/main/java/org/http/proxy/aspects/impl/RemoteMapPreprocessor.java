@@ -1,11 +1,11 @@
-package org.http.proxy.preprocessors.impl;
+package org.http.proxy.aspects.impl;
 
 import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
 import org.http.proxy.ConstantsAware;
 import org.http.proxy.ProxyThread;
-import org.http.proxy.preprocessors.IProxyPreprocessor;
+import org.http.proxy.aspects.IProxyPreprocessor;
 import org.http.proxy.utils.HttpHeaderUtil;
 
 public class RemoteMapPreprocessor implements IProxyPreprocessor, ConstantsAware {
@@ -44,7 +44,7 @@ public class RemoteMapPreprocessor implements IProxyPreprocessor, ConstantsAware
                 thread.uriToks[1] = host;
                 thread.uriToks[2] = port;
                 thread.uriToks[3] = path;
-                HttpHeaderUtil.setHeader(thread.requestHeaders, Host, hostAndPort);
+                HttpHeaderUtil.setHeader(thread.requestHeaders, HOST, hostAndPort);
 
                 break;
             }

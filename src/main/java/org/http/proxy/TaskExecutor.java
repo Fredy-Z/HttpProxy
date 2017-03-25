@@ -1,4 +1,4 @@
-package org.http.proxy.tasks;
+package org.http.proxy;
 
 import java.util.concurrent.*;
 
@@ -8,12 +8,10 @@ public class TaskExecutor {
 
     static {
         if (executorService == null || executorService.isShutdown()) {
-            final ThreadFactory parent = Executors
-                    .defaultThreadFactory();
             ThreadFactory factory = new ThreadFactory() {
                 @Override
                 public Thread newThread(Runnable runnable) {
-                    Thread thread = parent.newThread(runnable);
+                    Thread thread = new Thread(runnable);
                     thread.setDaemon(true);
                     return thread;
                 }

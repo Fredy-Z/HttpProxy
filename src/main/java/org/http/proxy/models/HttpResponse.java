@@ -3,7 +3,6 @@ package org.http.proxy.models;
 import org.http.proxy.ConstantsAware;
 import org.http.proxy.StatusCode;
 import org.http.proxy.utils.HttpHeaderUtil;
-import org.http.proxy.utils.MyByteArrayOutputStream;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -11,19 +10,25 @@ import java.util.List;
 
 
 public class HttpResponse implements ConstantsAware {
-
-    MyByteArrayOutputStream baos;
-    private String versionTok = "HTTP/1.1";
+    private String version = "HTTP/1.1";
     private int statusCode;
     private String statusMessage;
     private List<KeyValuePair<String, String>> headers;
     private byte[] body;
-    private String sendEncoding = DefaultEncoding;
+
+    public InputStream getInput() {
+        return input;
+    }
+
+    public void setInput(InputStream input) {
+        this.input = input;
+    }
+
     private InputStream input;
 
     private HttpResponse() {
-        headers = new ArrayList<KeyValuePair<String, String>>();
-        headers.add(new KeyValuePair<String, String>(Server, ProxyServerName));
+        headers = new ArrayList<>();
+        headers.add(new KeyValuePair<>(Server, ProxyServerName));
     }
 
     public HttpResponse(int code, String message) {
@@ -45,31 +50,23 @@ public class HttpResponse implements ConstantsAware {
 
     public HttpResponse(StatusCode status, byte[] body, String contentType) {
         this(status, body);
-        HttpHeaderUtil.setHeader(this.getHeaders(), ContentType, contentType);
+        HttpHeaderUtil.setHeader(this.getHeaders(), CONTENT_TYPE, contentType);
     }
 
-    public String getVersionTok() {
-        return versionTok;
+    public String getVersion() {
+        return version;
     }
 
-    public void setVersionTok(String versionTok) {
-        this.versionTok = versionTok;
+    public void setVersion(String version) {
+        this.version = version;
     }
 
-    public int getStatucCode() {
+    public int getStatusCode() {
         return statusCode;
-    }
-
-    public void setStatucCode(int statucCode) {
-        this.statusCode = statucCode;
     }
 
     public String getStatusMessage() {
         return statusMessage;
-    }
-
-    public void setStatusMessage(String statusMessage) {
-        this.statusMessage = statusMessage;
     }
 
     public List<KeyValuePair<String, String>> getHeaders() {
@@ -91,22 +88,6 @@ public class HttpResponse implements ConstantsAware {
 
     public void setBody(byte[] body) {
         this.body = body;
-    }
-
-    public String getSendEncoding() {
-        return sendEncoding;
-    }
-
-    public void setSendEncoding(String sendEncoding) {
-        this.sendEncoding = sendEncoding;
-    }
-
-    public InputStream getInput() {
-        return input;
-    }
-
-    public void setInput(InputStream input) {
-        this.input = input;
     }
 
 }
