@@ -1,6 +1,8 @@
+## HTTP Proxy
+
 A http proxy written with socket.
 
-Default usage:
+#### USAGE:
 ```
 HttpProxy proxy = new HttpProxy(host, port, null, null, null);
 proxy.start();
