@@ -1,6 +1,6 @@
 A http proxy written with socket.
 
-Usage:
+Default usage:
 ```
 HttpProxy proxy = new HttpProxy(host, port, null, null, new PacketSnap());
 proxy.start();
