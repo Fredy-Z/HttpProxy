@@ -4,7 +4,7 @@ A http proxy written with socket.
 
 #### USAGE:
 ```
-HttpProxy proxy = new HttpProxy(host, port, null, null, null);
+HttpProxy proxy = new HttpProxy(host, port);
 proxy.start();
 ```
 
