@@ -38,6 +38,10 @@ public class HttpProxy {
         }
     }
 
+    public HttpProxy(String host, int port) throws IOException {
+        this(host, port, null, null, null);
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
             System.out.println("Usage: HttpProxy host port");

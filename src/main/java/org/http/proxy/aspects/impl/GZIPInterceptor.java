@@ -17,8 +17,6 @@ import org.http.proxy.utils.HttpHeaderUtil;
 
 public class GZIPInterceptor implements IProxyInterceptor, ConstantsAware {
     private static final int MaxSize = 1024 * 1024 * 2;
-    private static final char CR = '\r';
-    private static final char LF = '\n';
     Logger logger = Logger.getLogger(GZIPInterceptor.class);
 
     @Override
@@ -110,7 +108,7 @@ public class GZIPInterceptor implements IProxyInterceptor, ConstantsAware {
             if (b == 0)
                 return 0;
 
-            if (b != CR) {
+            if (b != '\r') {
                 chunkSizeBuffer[index] = (byte) b;
                 index++;
             } else {
