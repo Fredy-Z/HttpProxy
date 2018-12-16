@@ -19,7 +19,7 @@ public class HttpProxy {
     private static final Logger logger = Logger.getLogger(HttpProxy.class);
 
     private ServerSocket serverSocket;
-    private List<Socket> clientSocketList = Collections.synchronizedList(new LinkedList<Socket>());
+    private final List<Socket> clientSocketList = Collections.synchronizedList(new LinkedList<Socket>());
     private IProxyPreprocessor preprocessor;
     private IProxyInterceptor interceptor;
     private IProxyPostprocessor postprocessor;

@@ -1,4 +1,4 @@
-package org.http.proxy;
+package org.http.proxy.exceptions;
 
 import java.io.IOException;
 

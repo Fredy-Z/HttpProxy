@@ -5,6 +5,7 @@ import org.apache.log4j.Logger;
 import org.http.proxy.aspects.IProxyPreprocessor;
 import org.http.proxy.aspects.IProxyInterceptor;
 import org.http.proxy.aspects.IProxyPostprocessor;
+import org.http.proxy.exceptions.ParseException;
 import org.http.proxy.models.HttpResponse;
 import org.http.proxy.models.KeyValuePair;
 import org.http.proxy.utils.GarUtils;
