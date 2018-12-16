@@ -1,6 +1,6 @@
 ## HTTP Proxy
 
-A http proxy written with socket.
+An http proxy written with socket.
 
 #### USAGE:
 ```
